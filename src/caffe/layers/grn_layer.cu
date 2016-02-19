@@ -42,7 +42,9 @@ __global__ void kernel_channel_div(const int num, const int channels,
     int n = index / spatial_dim;
     int s = index % spatial_dim;
     for (int c = 0; c < channels; ++c) {
-      data[(n * channels + c) * spatial_dim + s] /= channel_sum[index];
+      if (channel_sum[index] != 0) {
+        data[(n * channels + c) * spatial_dim + s] /= channel_sum[index];
+      }
     }
   }
 }
@@ -76,6 +78,8 @@ void GRNLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   caffe_copy(bottom[0]->count(), bottom_data, top_data);
   caffe_copy(bottom[0]->count(), bottom_data, square_data);
 
+  // scale to number of channels
+  caffe_gpu_scale<Dtype>(bottom[0]->count(), Dtype(1.0) / Dtype(channels), square_data, square_data);
   // square
   caffe_gpu_powx<Dtype>(bottom[0]->count(), square_data, Dtype(2.0), square_data);
   //sum cross channel
@@ -84,6 +88,8 @@ void GRNLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       norm_data);
   // square root
   caffe_gpu_powx<Dtype>(num * spatial_dim, norm_data, Dtype(0.5), norm_data);
+  // fix scaling
+  caffe_gpu_scale<Dtype>(num * spatial_dim, Dtype(channels), norm_data, norm_data);
   // divide
   kernel_channel_div<Dtype><<<CAFFE_GET_BLOCKS(num * spatial_dim),
       CAFFE_CUDA_NUM_THREADS>>>(num, channels, spatial_dim, top_data,
